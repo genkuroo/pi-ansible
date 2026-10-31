@@ -1,0 +1,176 @@
+---
+# Ansible version of job-agent's deploy/install.sh. The service and timer files
+# still come from the job-agent repo itself, so there's one copy of them.
+
+# python3-packaging isn't for job-agent: Ansible's own pip module needs it,
+# and a fresh OS doesn't ship it.
+- name: Install system packages (python venv, headless chromium for PDFs)
+  ansible.builtin.apt:
+    name: [git, python3-venv, python3-packaging, chromium]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+# --- Pulling the private repo ---------------------------------------------------
+# Real Pi: clone from GitHub with the read-only deploy key. The key is a
+# secret, so it isn't in this repo yet (see README "Phase 2: secrets"); on a
+# fresh card it must be put back first.
+- name: Set up GitHub access with the deploy key
+  when: not jobagent_repo_bundle
+  block:
+    - name: Check the GitHub deploy key is present
+      ansible.builtin.stat:
+        path: "{{ jobagent_deploy_key }}"
+      register: jobagent_key
+
+    - name: Stop with a clear message if it isn't
+      ansible.builtin.fail:
+        msg: >-
+          {{ jobagent_deploy_key }} is missing. Copy the read-only deploy key
+          back onto the Pi (or add it on GitHub again) before running this role.
+      when: not jobagent_key.stat.exists
+
+    - name: Point the github-jobagent SSH alias at the deploy key
+      ansible.builtin.blockinfile:
+        path: "{{ jobagent_home }}/.ssh/config"
+        create: true
+        mode: "0600"
+        marker: "# {mark} ANSIBLE jobagent deploy key"
+        block: |
+          Host github-jobagent
+              HostName github.com
+              User git
+              IdentityFile {{ jobagent_deploy_key }}
+              IdentitiesOnly yes
+
+# Test VM: copy a git bundle over from the Mac and clone from that instead.
+- name: Copy the repo bundle to the test machine
+  ansible.builtin.copy:
+    src: "{{ jobagent_repo_bundle }}"
+    dest: "{{ jobagent_home }}/job-agent.bundle"
+    mode: "0600"
+  when: jobagent_repo_bundle | length > 0
+  register: jobagent_bundle
+
+# The git module turns a path into a file:// URL, which can't read a bundle,
+# so unpack it into a bare repo first (refreshed whenever the bundle changes).
+- name: Check for the unpacked bare repo
+  ansible.builtin.stat:
+    path: "{{ jobagent_home }}/job-agent-src.git"
+  register: jobagent_bare
+  when: jobagent_repo_bundle | length > 0
+
+- name: Unpack the bundle into a bare repo
+  ansible.builtin.shell: |
+    rm -rf {{ jobagent_home }}/job-agent-src.git
+    git clone --quiet --bare {{ jobagent_home }}/job-agent.bundle {{ jobagent_home }}/job-agent-src.git
+  when: jobagent_repo_bundle | length > 0 and (jobagent_bundle is changed or not jobagent_bare.stat.exists)
+  changed_when: true
+
+- name: Clone or update the repo
+  ansible.builtin.git:
+    repo: "{{ (jobagent_home ~ '/job-agent-src.git') if jobagent_repo_bundle else jobagent_repo }}"
+    dest: "{{ jobagent_dir }}"
+    version: "{{ jobagent_version }}"
+    accept_newhostkey: true
+    # No force: if someone hand-edited files on the Pi, fail loudly
+    # instead of throwing their changes away.
+  register: jobagent_git
+
+# --- Python environment -----------------------------------------------------------
+- name: Install Python requirements into the repo's venv
+  ansible.builtin.pip:
+    requirements: "{{ jobagent_dir }}/requirements.txt"
+    virtualenv: "{{ jobagent_dir }}/.venv"
+    virtualenv_command: python3 -m venv
+
+# --- Config + secrets ---------------------------------------------------------------
+- name: Create the config directory (only you can read it)
+  ansible.builtin.file:
+    path: "{{ jobagent_conf_dir }}"
+    state: directory
+    mode: "0700"
+
+- name: Start an env file from the template if there isn't one
+  ansible.builtin.copy:
+    src: "{{ jobagent_dir }}/deploy/env.example"
+    dest: "{{ jobagent_conf_dir }}/env"
+    remote_src: true
+    force: false   # never overwrite real secrets
+    mode: "0600"
+
+- name: Create the Claude Code settings directory
+  ansible.builtin.file:
+    path: "{{ jobagent_home }}/.claude"
+    state: directory
+    mode: "0700"
+
+- name: Keep Claude Code from piling session files on the SD card
+  ansible.builtin.copy:
+    content: '{ "cleanupPeriodDays": 2 }'
+    dest: "{{ jobagent_home }}/.claude/settings.json"
+    force: false
+    mode: "0644"
+
+# --- systemd user timers -----------------------------------------------------------
+- name: Create the user units directory
+  ansible.builtin.file:
+    path: "{{ jobagent_units_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Find the unit files in the repo
+  ansible.builtin.find:
+    paths: "{{ jobagent_dir }}/deploy"
+    patterns: ["jobagent*.service", "jobagent*.timer"]
+  register: jobagent_units
+
+- name: Install the unit files
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: "{{ jobagent_units_dir }}/"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ jobagent_units.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  notify: Reload user systemd
+
+- name: Let the timers run while nobody is logged in (linger)
+  ansible.builtin.command: loginctl enable-linger {{ ansible_facts['user_id'] }}
+  args:
+    creates: /var/lib/systemd/linger/{{ ansible_facts['user_id'] }}
+  become: true
+
+- name: Apply any unit changes before touching the timers
+  ansible.builtin.meta: flush_handlers
+
+# Same rule as install.sh: only start the schedule once the secrets are filled
+# in, or every run would just fail.
+- name: Check whether the secrets are filled in
+  ansible.builtin.shell: |
+    set -a; . {{ jobagent_conf_dir }}/env; set +a
+    [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && { [ -n "${DISCORD_WEBHOOK_SRE:-}" ] || [ -n "${DISCORD_WEBHOOK_IT:-}" ]; }
+  register: jobagent_secrets
+  changed_when: false
+  failed_when: false
+  no_log: true   # sourcing the file must never print a token
+
+- name: Enable and start the timers
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    scope: user
+    enabled: true
+    state: started
+  loop: "{{ jobagent_timers }}"
+  environment:
+    XDG_RUNTIME_DIR: /run/user/{{ ansible_facts['user_uid'] }}
+  when: jobagent_secrets.rc == 0
+
+- name: Say why the timers were left off
+  ansible.builtin.debug:
+    msg: >-
+      Timers NOT started: fill in CLAUDE_CODE_OAUTH_TOKEN and a DISCORD_WEBHOOK_*
+      in {{ jobagent_conf_dir }}/env, then run the playbook again.
+  when: jobagent_secrets.rc != 0

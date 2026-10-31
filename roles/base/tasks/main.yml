@@ -1,0 +1,21 @@
+---
+# Things every Pi needs before anything else runs on it.
+
+- name: Install base packages
+  ansible.builtin.apt:
+    name: "{{ base_packages }}"
+    state: present
+    update_cache: true
+    cache_valid_time: 3600   # skip `apt update` if it ran in the last hour
+  become: true
+
+- name: Read the current timezone
+  ansible.builtin.command: timedatectl show --property=Timezone --value
+  register: base_current_tz
+  changed_when: false
+
+- name: Set the timezone (timers like "every 2h, 6am-10pm" depend on it)
+  ansible.builtin.command: timedatectl set-timezone {{ base_timezone }}
+  become: true
+  changed_when: true
+  when: base_current_tz.stdout != base_timezone

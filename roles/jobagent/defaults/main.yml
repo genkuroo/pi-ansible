@@ -1,0 +1,17 @@
+---
+jobagent_repo: git@github-jobagent:genkuroo/job-agent.git
+jobagent_version: main
+# Test hook: a `git bundle` file on the control machine (your Mac). When set,
+# the role clones from it instead of GitHub, so a throwaway VM can be tested
+# without the deploy key. Leave unset on real Pis.
+jobagent_repo_bundle: ""
+
+jobagent_home: "{{ ansible_facts['user_dir'] }}"
+jobagent_dir: "{{ jobagent_home }}/job-agent"
+jobagent_conf_dir: "{{ jobagent_home }}/.config/jobagent"
+jobagent_units_dir: "{{ jobagent_home }}/.config/systemd/user"
+jobagent_deploy_key: "{{ jobagent_home }}/.ssh/jobagent_deploy"
+jobagent_timers:
+  - jobagent.timer
+  - jobagent-scout.timer
+  - jobagent-summary.timer

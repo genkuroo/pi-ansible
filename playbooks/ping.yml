@@ -1,0 +1,8 @@
+---
+# Smoke test: can Ansible reach every host and run Python there?
+- name: Check connectivity
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Ping
+      ansible.builtin.ping:

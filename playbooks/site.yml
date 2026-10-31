@@ -1,0 +1,14 @@
+---
+# The one command: `ansible-playbook playbooks/site.yml`
+# Each play targets an inventory group, so a host gets a role just by being
+# listed in that group.
+
+- name: Base setup for every Pi
+  hosts: pis
+  roles:
+    - base
+
+- name: Job-search agent
+  hosts: jobagent
+  roles:
+    - jobagent

@@ -1,0 +1,9 @@
+---
+# Shared by every Pi.
+base_timezone: America/Los_Angeles
+base_packages:
+  - git
+  - curl
+  - htop
+  - vim
+  - unattended-upgrades

@@ -1,0 +1,17 @@
+# Throwaway VM standing in for a freshly flashed Pi (Debian 13 arm64 via Lima).
+# Kept in its own file so a normal run never touches it, and a test run never
+# touches the real Pis:
+#   ansible-playbook -i inventory/test.yml playbooks/site.yml
+all:
+  children:
+    pis:
+      hosts:
+        testpi:
+          # Lima writes an SSH config for each VM; reuse it so the port and key
+          # stay right after every restart.
+          ansible_host: lima-testpi
+          ansible_ssh_common_args: "-F {{ lookup('env', 'HOME') }}/.lima/testpi/ssh.config"
+          jobagent_repo_bundle: "{{ playbook_dir }}/../.cache/job-agent.bundle"
+    jobagent:
+      hosts:
+        testpi:
