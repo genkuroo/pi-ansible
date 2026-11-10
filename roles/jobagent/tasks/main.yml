@@ -77,6 +77,7 @@
     # No force: if someone hand-edited files on the Pi, fail loudly
     # instead of throwing their changes away.
   register: jobagent_git
+  notify: Restart the board page   # pick up new code after a pull
 
 # --- Python environment -----------------------------------------------------------
 - name: Install Python requirements into the repo's venv
@@ -84,6 +85,10 @@
     requirements: "{{ jobagent_dir }}/requirements.txt"
     virtualenv: "{{ jobagent_dir }}/.venv"
     virtualenv_command: python3 -m venv
+  # On a fresh OS, python3-packaging (which this module needs) is only "would
+  # install" during --check, so a dry run can't evaluate this task. Real runs
+  # still fail normally.
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # --- Config + secrets ---------------------------------------------------------------
 - name: Create the config directory (only you can read it)
@@ -99,6 +104,16 @@
     remote_src: true
     force: false   # never overwrite real secrets
     mode: "0600"
+  register: jobagent_env_new
+
+# The template hardcodes /home/ethan. Point it at this user's home, but only in a
+# file we just created, never in one that already holds secrets.
+- name: Fix the template's home paths for this user
+  ansible.builtin.replace:
+    path: "{{ jobagent_conf_dir }}/env"
+    regexp: "/home/ethan/"
+    replace: "{{ jobagent_home }}/"
+  when: jobagent_env_new.changed and jobagent_home != '/home/ethan'
 
 - name: Create the Claude Code settings directory
   ansible.builtin.file:
@@ -145,6 +160,16 @@
 
 - name: Apply any unit changes before touching the timers
   ansible.builtin.meta: flush_handlers
+
+- name: Enable and start the board (timers + web page)
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    scope: user
+    enabled: true
+    state: started
+  loop: "{{ jobagent_always_units }}"
+  environment:
+    XDG_RUNTIME_DIR: /run/user/{{ ansible_facts['user_uid'] }}
 
 # Same rule as install.sh: only start the schedule once the secrets are filled
 # in, or every run would just fail.

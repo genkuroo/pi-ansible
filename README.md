@@ -3,7 +3,7 @@
 Ansible playbooks that rebuild my Raspberry Pis from a freshly flashed SD card
 with one command, instead of setting them up by hand over SSH.
 
-- **Pi 500** (`pi500.local`): job-agent, my self-hosted job-search agent
+- **Pi 500** (`pi500`, over Tailscale): job-agent, my self-hosted job-search agent
   (private repo; systemd user timers), and a modded Minecraft server
 - **Pi 400** (`homelab`): the Docker Compose stack behind gen-kuro.com
 
@@ -89,13 +89,36 @@ and already had what was missing. Both would have broken a real rebuild:
 2. **The pip module needs `python3-packaging` on the target.** That's not for
    job-agent; Ansible's own module needs it, and a fresh OS doesn't ship it.
    Fix: install it in the role's package list.
+3. **The env template hardcodes `/home/ethan`.** Fine on the real Pi, but under
+   any other username the board page crashed on startup trying to write there.
+   Fix: right after creating the env file from the template, point its paths at
+   the real home folder. A file that already exists (with secrets) is never touched.
+
+## Running it on the real Pi 500
+
+**Result (2026-11-10):** `--check --diff` first, then applied for real: 5 changes,
+0 failures, and a second run reported `changed=0`. job-agent, the board page and
+Minecraft kept running throughout.
+
+What the real Pi caught:
+
+1. **The role had drifted behind job-agent.** job-agent had since added a board
+   page (`jobagent-web.service`) and two timers that need no secrets. A rebuild
+   would have installed them but left them off. Fix: the role now always enables
+   them, and restarts the board page whenever a pull brings new code.
+2. **A dry run can't evaluate the pip task on a fresh OS.** The library it needs is
+   only "would install" in check mode. Fix: that one task ignores errors in check
+   mode only (`ignore_errors: "{{ ansible_check_mode }}"`); real runs fail normally.
+3. **A hand-written SSH entry would have been duplicated.** Ansible only recognizes
+   lines inside its own `BEGIN/END ANSIBLE` markers. Fix: backed up `~/.ssh/config`,
+   removed the hand-written entry, and let Ansible own the only copy.
 
 ## Roadmap
 
 - [x] **Phase 1:** scaffold, inventory, `base` + `jobagent` roles, VM test loop
-- [ ] Dry run (`--check --diff`) against the real Pi 500 (needs the home LAN, or
-      Tailscale on the Pi 500)
-- [ ] **Phase 2:** secrets in **ansible-vault** (deploy key + env file)
+- [x] Dry run, then a real apply, against the Pi 500 over Tailscale (2026-11-10)
+- [ ] **Phase 2:** secrets in **ansible-vault** (deploy key + env file), plus
+      Tailscale itself (install, auth key, and Serve for the board page)
 - [ ] **Phase 3:** Minecraft role (Temurin 8, `minecraft` user, `radlite.service`,
       playit) plus world backups
 - [ ] **Phase 4:** Pi 400 Docker stack (start services by name, never a bare

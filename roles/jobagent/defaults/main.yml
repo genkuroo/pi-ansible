@@ -11,6 +11,12 @@ jobagent_dir: "{{ jobagent_home }}/job-agent"
 jobagent_conf_dir: "{{ jobagent_home }}/.config/jobagent"
 jobagent_units_dir: "{{ jobagent_home }}/.config/systemd/user"
 jobagent_deploy_key: "{{ jobagent_home }}/.ssh/jobagent_deploy"
+# Need no secrets (no Claude, no Discord), so they always run.
+jobagent_always_units:
+  - jobagent-board.timer
+  - jobagent-board-check.timer
+  - jobagent-web.service
+# Call Claude and post to Discord: only started once the env file has secrets.
 jobagent_timers:
   - jobagent.timer
   - jobagent-scout.timer

@@ -5,3 +5,11 @@
     scope: user
   environment:
     XDG_RUNTIME_DIR: /run/user/{{ ansible_facts['user_uid'] }}
+
+- name: Restart the board page
+  ansible.builtin.systemd_service:
+    name: jobagent-web.service
+    scope: user
+    state: restarted
+  environment:
+    XDG_RUNTIME_DIR: /run/user/{{ ansible_facts['user_uid'] }}
