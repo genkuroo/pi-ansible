@@ -2,6 +2,22 @@
 # Ansible version of job-agent's deploy/install.sh. The service and timer files
 # still come from the job-agent repo itself, so there's one copy of them.
 
+# Fail before touching anything if the vault didn't load (wrong password file,
+# missing contact.yml, a renamed key), instead of halfway through with a blank
+# env file.
+- name: Check every secret this role needs is set
+  ansible.builtin.assert:
+    that:
+      - jobagent_secrets is defined
+      - jobagent_secret_names | difference(jobagent_secrets.keys()) | length == 0
+      - jobagent_google_sa_content is defined
+      - jobagent_repo_bundle | length > 0 or jobagent_deploy_key_content is defined
+    fail_msg: >-
+      Missing job-agent secrets. They come from inventory/host_vars/<host>/vault.yml
+      and contact.yml (ansible-vault); check both files exist and the vault
+      password is at ~/.config/pi-ansible/vault-pass.
+    quiet: true
+
 # python3-packaging isn't for job-agent: Ansible's own pip module needs it,
 # and a fresh OS doesn't ship it.
 - name: Install system packages (python venv, headless chromium for PDFs)
@@ -13,23 +29,25 @@
   become: true
 
 # --- Pulling the private repo ---------------------------------------------------
-# Real Pi: clone from GitHub with the read-only deploy key. The key is a
-# secret, so it isn't in this repo yet (see README "Phase 2: secrets"); on a
-# fresh card it must be put back first.
+# Real Pi: clone from GitHub with the read-only deploy key, which comes out of
+# the vault. no_log + diff: false keep the key out of the output, even with
+# -v or --diff.
 - name: Set up GitHub access with the deploy key
   when: not jobagent_repo_bundle
   block:
-    - name: Check the GitHub deploy key is present
-      ansible.builtin.stat:
-        path: "{{ jobagent_deploy_key }}"
-      register: jobagent_key
+    - name: Create the SSH directory
+      ansible.builtin.file:
+        path: "{{ jobagent_home }}/.ssh"
+        state: directory
+        mode: "0700"
 
-    - name: Stop with a clear message if it isn't
-      ansible.builtin.fail:
-        msg: >-
-          {{ jobagent_deploy_key }} is missing. Copy the read-only deploy key
-          back onto the Pi (or add it on GitHub again) before running this role.
-      when: not jobagent_key.stat.exists
+    - name: Install the GitHub deploy key (from the vault)
+      ansible.builtin.copy:
+        content: "{{ jobagent_deploy_key_content }}"
+        dest: "{{ jobagent_deploy_key }}"
+        mode: "0600"
+      no_log: true
+      diff: false
 
     - name: Point the github-jobagent SSH alias at the deploy key
       ansible.builtin.blockinfile:
@@ -97,23 +115,26 @@
     state: directory
     mode: "0700"
 
-- name: Start an env file from the template if there isn't one
-  ansible.builtin.copy:
-    src: "{{ jobagent_dir }}/deploy/env.example"
+# The vault is now the source of truth: the env file is rebuilt from it every
+# run, so a hand edit on the Pi gets put back. Rotate a token in the vault
+# (`ansible-vault edit`), then run the playbook.
+# diff: false matters: --diff would otherwise print the old and new tokens.
+- name: Write the env file (secrets from the vault)
+  ansible.builtin.template:
+    src: env.j2
     dest: "{{ jobagent_conf_dir }}/env"
-    remote_src: true
-    force: false   # never overwrite real secrets
     mode: "0600"
-  register: jobagent_env_new
+  no_log: true
+  diff: false
+  notify: Restart the board page   # the only long-running reader of the file
 
-# The template hardcodes /home/ethan. Point it at this user's home, but only in a
-# file we just created, never in one that already holds secrets.
-- name: Fix the template's home paths for this user
-  ansible.builtin.replace:
-    path: "{{ jobagent_conf_dir }}/env"
-    regexp: "/home/ethan/"
-    replace: "{{ jobagent_home }}/"
-  when: jobagent_env_new.changed and jobagent_home != '/home/ethan'
+- name: Write the Google service-account key (from the vault)
+  ansible.builtin.copy:
+    content: "{{ jobagent_google_sa_content }}"
+    dest: "{{ jobagent_conf_dir }}/google-sa.json"
+    mode: "0600"
+  no_log: true
+  diff: false
 
 - name: Create the Claude Code settings directory
   ansible.builtin.file:
@@ -199,3 +220,8 @@
       Timers NOT started: fill in CLAUDE_CODE_OAUTH_TOKEN and a DISCORD_WEBHOOK_*
       in {{ jobagent_conf_dir }}/env, then run the playbook again.
   when: jobagent_secrets.rc != 0
+
+# --- Board domain (optional) ------------------------------------------------------
+- name: Serve the board at its own domain
+  ansible.builtin.include_tasks: domain.yml
+  when: jobagent_domain | length > 0

@@ -1,0 +1,62 @@
+---
+# Install Tailscale the way its official install script does on Debian, and
+# join the tailnet if this machine isn't on it yet.
+
+- name: Add Tailscale's package signing key
+  ansible.builtin.get_url:
+    url: https://pkgs.tailscale.com/stable/debian/{{ tailscale_codename }}.noarmor.gpg
+    dest: /usr/share/keyrings/tailscale-archive-keyring.gpg
+    mode: "0644"
+  become: true
+
+- name: Add Tailscale's apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/tailscale.list
+    mode: "0644"
+    content: |
+      # Tailscale packages for debian {{ tailscale_codename }}
+      deb [signed-by=/usr/share/keyrings/tailscale-archive-keyring.gpg] https://pkgs.tailscale.com/stable/debian {{ tailscale_codename }} main
+  become: true
+  register: tailscale_repo
+
+- name: Install Tailscale
+  ansible.builtin.apt:
+    name: tailscale
+    state: present
+    update_cache: "{{ tailscale_repo is changed }}"   # new repo: refresh the package list first
+  become: true
+
+- name: Run the Tailscale service at boot
+  ansible.builtin.systemd_service:
+    name: tailscaled
+    enabled: true
+    state: started
+  become: true
+
+# "Running" means logged in and connected. A fresh install reports NeedsLogin.
+- name: Check whether this machine is on the tailnet
+  ansible.builtin.command: tailscale status --json
+  register: tailscale_status
+  changed_when: false
+  failed_when: false
+  check_mode: false   # read-only, so safe (and needed) during --check too
+
+- name: Note the tailnet state
+  ansible.builtin.set_fact:
+    tailscale_joined: "{{ tailscale_status.rc == 0 and (tailscale_status.stdout | from_json).BackendState == 'Running' }}"
+
+- name: Join the tailnet with the one-time auth key
+  ansible.builtin.command: >-
+    tailscale up --authkey={{ tailscale_authkey }} --hostname={{ tailscale_hostname }}
+  become: true
+  no_log: true   # the command line holds the key
+  changed_when: true
+  when: not tailscale_joined and tailscale_authkey | length > 0
+
+- name: Say why this machine wasn't joined
+  ansible.builtin.debug:
+    msg: >-
+      Not on the tailnet yet. Make a one-time auth key (Tailscale admin console >
+      Settings > Keys), delete the old {{ tailscale_hostname }} machine there so
+      the name is free, then run again with -e tailscale_authkey=tskey-auth-...
+  when: not tailscale_joined and tailscale_authkey | length == 0

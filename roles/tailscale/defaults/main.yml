@@ -1,0 +1,10 @@
+---
+# Debian codename for Tailscale's apt repo (trixie = Debian 13 / Pi OS today).
+tailscale_codename: "{{ ansible_facts['distribution_release'] }}"
+tailscale_hostname: "{{ inventory_hostname }}"
+
+# One-time auth key, only needed to join a fresh card to the tailnet. Pass it at
+# run time instead of storing it: keys expire (90 days max), so a stored one
+# would be dead by the time a card actually fails.
+#   ansible-playbook playbooks/site.yml -e tailscale_authkey=tskey-auth-...
+tailscale_authkey: ""

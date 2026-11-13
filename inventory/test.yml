@@ -12,6 +12,25 @@ all:
           ansible_host: lima-testpi
           ansible_ssh_common_args: "-F {{ lookup('env', 'HOME') }}/.lima/testpi/ssh.config"
           jobagent_repo_bundle: "{{ playbook_dir }}/../.cache/job-agent.bundle"
+          # FAKE secrets, so the vault code path gets tested without the VM ever
+          # holding real ones. `.invalid` hosts can never resolve, so even with
+          # the timers on, nothing reaches Discord, healthchecks or Claude.
+          jobagent_secrets:
+            CLAUDE_CODE_OAUTH_TOKEN: fake-token-for-the-test-vm
+            GOOGLE_SHEET_ID: fake-sheet-id
+            DISCORD_WEBHOOK_SRE: https://discord.invalid/sre
+            DISCORD_WEBHOOK_IT: https://discord.invalid/it
+            DISCORD_WEBHOOK_STATUS: https://discord.invalid/status
+            HEALTHCHECK_URL_WATCHLIST: https://hc.invalid/watchlist
+            HEALTHCHECK_URL_SCOUT: https://hc.invalid/scout
+            JOBAGENT_BOARD_URL: http://127.0.0.1:8350/healthz
+            CONTACT_NAME: '"Test Person"'
+            CONTACT_LOCATION: '"Nowhere, CA"'
+            CONTACT_PHONE: '"555-0100"'
+            CONTACT_EMAIL: test@example.invalid
+            CONTACT_LINKEDIN: linkedin.invalid/test
+            CONTACT_GITHUB: github.invalid/test
+          jobagent_google_sa_content: '{"type": "service_account", "note": "fake, test VM only"}'
     jobagent:
       hosts:
         testpi:

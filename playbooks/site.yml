@@ -7,6 +7,7 @@
   hosts: pis
   roles:
     - base
+    - tailscale   # before anything that's reached over the tailnet
 
 - name: Job-search agent
   hosts: jobagent

@@ -1,3 +1,6 @@
 .venv/
 .cache/
 *.retry
+# Personal contact info (phone, email): locked with ansible-vault, but kept off
+# GitHub entirely because it can't be rotated if the vault password ever leaked.
+inventory/host_vars/*/contact.yml

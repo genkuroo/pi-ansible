@@ -1,0 +1,60 @@
+---
+# Serve the board at https://{{ jobagent_domain }}, reachable only over Tailscale.
+# The real work (DNS record -> the Pi's 100.x address, a Let's Encrypt cert via
+# a DNS challenge, Caddy bound to the tailnet address) lives in job-agent's
+# deploy/setup-domain.sh. Ansible's part: hand it the Cloudflare token from the
+# vault, and run it only when the setup is missing, so a normal run stays
+# changed=0 and never touches DNS or asks Let's Encrypt for a new cert.
+
+- name: Check the board is on the tailnet (the domain points at its 100.x address)
+  ansible.builtin.command: tailscale ip -4
+  register: jobagent_ts_ip
+  changed_when: false
+  failed_when: false
+
+- name: Set up the board domain
+  when: jobagent_ts_ip.rc == 0
+  block:
+    - name: Create the certbot config directory
+      ansible.builtin.file:
+        path: /etc/letsencrypt
+        state: directory
+        mode: "0755"
+      become: true
+
+    - name: Install the Cloudflare DNS token for certbot (from the vault)
+      ansible.builtin.copy:
+        content: "dns_cloudflare_api_token = {{ jobagent_cloudflare_token }}\n"
+        dest: /etc/letsencrypt/cloudflare.ini
+        owner: root
+        group: root
+        mode: "0600"
+      become: true
+      no_log: true
+      diff: false
+
+    - name: Check for the certificate
+      ansible.builtin.stat:
+        path: /etc/letsencrypt/live/{{ jobagent_domain }}/fullchain.pem
+      become: true
+      register: jobagent_cert
+
+    - name: Check Caddy is set up for the board
+      ansible.builtin.command: grep -q "https://{{ jobagent_domain }}:443" /etc/caddy/Caddyfile
+      register: jobagent_caddy
+      changed_when: false
+      failed_when: false
+
+    # The script uses sudo itself and edits the env file as this user, so run it
+    # as this user, not as root.
+    - name: Run job-agent's setup-domain.sh (fresh card, or setup missing)
+      ansible.builtin.command: bash {{ jobagent_dir }}/deploy/setup-domain.sh {{ jobagent_domain }}
+      when: not jobagent_cert.stat.exists or jobagent_caddy.rc != 0
+      changed_when: true
+
+- name: Say why the domain was skipped
+  ansible.builtin.debug:
+    msg: >-
+      Board domain NOT set up: this machine isn't on Tailscale yet. Join it
+      (run with -e tailscale_authkey=tskey-...), then run the playbook again.
+  when: jobagent_ts_ip.rc != 0

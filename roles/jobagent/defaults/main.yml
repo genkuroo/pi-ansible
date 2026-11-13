@@ -11,6 +11,45 @@ jobagent_dir: "{{ jobagent_home }}/job-agent"
 jobagent_conf_dir: "{{ jobagent_home }}/.config/jobagent"
 jobagent_units_dir: "{{ jobagent_home }}/.config/systemd/user"
 jobagent_deploy_key: "{{ jobagent_home }}/.ssh/jobagent_deploy"
+
+# --- Secrets (Phase 2) ----------------------------------------------------------
+# No defaults on purpose: each host sets these from its vault (see
+# inventory/host_vars/pi500/main.yml), and the role stops with a clear message
+# if any is missing, rather than writing an env file full of blanks.
+#   jobagent_secrets:             env-file secrets, keyed by variable name
+#   jobagent_deploy_key_content:  read-only GitHub deploy key (private half)
+#   jobagent_google_sa_content:   Google service-account JSON (Sheet access)
+jobagent_secret_names:
+  - CLAUDE_CODE_OAUTH_TOKEN
+  - GOOGLE_SHEET_ID
+  - DISCORD_WEBHOOK_SRE
+  - DISCORD_WEBHOOK_IT
+  - DISCORD_WEBHOOK_STATUS
+  - HEALTHCHECK_URL_WATCHLIST
+  - HEALTHCHECK_URL_SCOUT
+  - JOBAGENT_BOARD_URL
+  - CONTACT_NAME
+  - CONTACT_LOCATION
+  - CONTACT_PHONE
+  - CONTACT_EMAIL
+  - CONTACT_LINKEDIN
+  - CONTACT_GITHUB
+
+# --- Non-secret settings in the env file (values the Pi runs with today) ---------
+jobagent_claude_model: ""
+jobagent_max_age_days: 7
+jobagent_max_active: 40
+jobagent_max_new_per_run: 8
+jobagent_disk_budget_mb: 200
+jobagent_min_score: 7
+jobagent_daily_letter_cap: 40
+jobagent_daily_scout_cap: 1
+
+# --- Board domain (optional) --------------------------------------------------------
+# Set to serve the board at https://<domain> over Tailscale only. Runs job-agent's
+# own deploy/setup-domain.sh, so the Caddy/certbot setup has one copy (there).
+# Needs jobagent_cloudflare_token (DNS-edit token for that zone) from the vault.
+jobagent_domain: ""
 # Need no secrets (no Claude, no Discord), so they always run.
 jobagent_always_units:
   - jobagent-board.timer

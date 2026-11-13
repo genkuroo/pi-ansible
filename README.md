@@ -23,13 +23,18 @@ inventory/
   hosts.yml          # the real Pis, grouped by what they run
   test.yml           # a throwaway VM standing in for a fresh Pi
   group_vars/pis.yml
-  host_vars/pi500.yml
+  host_vars/pi500/
+    main.yml         # settings + the NAMES of every secret (plain text)
+    vault.yml        # the secret VALUES (ansible-vault, AES-256)
+    contact.yml      # phone/email for letters (vault-encrypted AND gitignored)
 playbooks/
   site.yml           # the one command
   ping.yml           # connectivity smoke test
 roles/
   base/              # packages + timezone, every Pi
-  jobagent/          # Ansible version of job-agent's deploy/install.sh
+  tailscale/         # install from Tailscale's apt repo, join with a one-time key
+  jobagent/          # Ansible version of job-agent's deploy/install.sh,
+                     # plus its secrets and the board's domain
 ```
 
 ## Usage
@@ -37,6 +42,8 @@ roles/
 ```sh
 python3 -m venv .venv && .venv/bin/pip install ansible-core ansible-lint
 source .venv/bin/activate
+# The vault password lives outside the repo (ansible.cfg points here):
+#   ~/.config/pi-ansible/vault-pass   (mode 600, keep a copy in a password manager)
 
 ansible-playbook playbooks/ping.yml                 # can we reach everything?
 ansible-playbook playbooks/site.yml --check --diff  # dry run: what WOULD change
@@ -49,9 +56,17 @@ ansible-playbook playbooks/site.yml                 # apply
    hostname, user, Wi-Fi and SSH public key in its customization dialog. (On
    Trixie, a hand-written `custom.toml` is silently ignored.)
 2. Clear the old host key: `ssh-keygen -R pi500.local`
-3. Put the secrets back (until Phase 2 below): the job-agent deploy key at
-   `~/.ssh/jobagent_deploy` and `~/.config/jobagent/env`.
-4. `ansible-playbook playbooks/site.yml`
+3. In the Tailscale admin console, delete the old `pi500` machine (so the new
+   one gets the same name) and make a one-time auth key.
+4. On the home network, the new card isn't on Tailscale yet, so reach it by
+   its LAN name for this first run:
+   ```sh
+   ansible-playbook playbooks/site.yml --limit pi500 \
+     -e ansible_host=pi500.local -e tailscale_authkey=tskey-auth-...
+   ```
+   That's it: no secrets to copy by hand. The playbook joins the tailnet, writes
+   the deploy key, env file and Google key from the vault, starts the timers,
+   and re-creates the board's DNS record, certificate and Caddy setup.
 
 Ansible restores **configuration**, not **data**. Databases, letters and
 Minecraft worlds need backups of their own.
@@ -113,15 +128,73 @@ What the real Pi caught:
    lines inside its own `BEGIN/END ANSIBLE` markers. Fix: backed up `~/.ssh/config`,
    removed the hand-written entry, and let Ansible own the only copy.
 
+## Phase 2: secrets in ansible-vault
+
+Every secret job-agent needs (Claude token, Discord webhooks, healthcheck URLs,
+Google service-account key, GitHub deploy key, Cloudflare DNS token) is now in
+`vault.yml`, encrypted with AES-256. The repo can be public because the
+ciphertext is useless without the password, and the password file is outside
+the repo (`ansible.cfg` points at `~/.config/pi-ansible/vault-pass`).
+
+How it's put together:
+
+- **Names in plain text, values in the vault.** `host_vars/pi500/main.yml` maps
+  readable names (`jobagent_secrets.DISCORD_WEBHOOK_SRE`) to vault variables
+  (`vault_jobagent_env_discord_webhook_sre`). You can grep for where a secret
+  is used without decrypting anything, and the `vault_` prefix says where every
+  value comes from. This is the layout Ansible's own docs recommend.
+- **Contact details are encrypted and kept off GitHub.** Phone and email are in
+  `contact.yml`, which is vault-encrypted *and* gitignored. A token can be
+  rotated if the vault password ever leaks; a phone number can't.
+- **Nothing secret is ever printed.** Every task that handles a secret has
+  `no_log: true` (hides values in output and logs) and `diff: false` (otherwise
+  `--diff` would show the old and new file side by side). Tested: a run at
+  `-vvv --diff` that changed the env file printed none of its values.
+- **The vault is the source of truth.** The env file is rebuilt from a template
+  every run, so a hand edit on the Pi gets put back. To rotate a token:
+  `ansible-vault edit inventory/host_vars/pi500/vault.yml`, then run the playbook.
+- **Fail early, not halfway.** The role first checks every secret it needs is
+  set, so a missing `contact.yml` or a wrong password stops the run before
+  anything is touched, instead of writing an env file full of blanks.
+- **The test VM gets fake secrets.** `inventory/test.yml` sets obviously fake
+  values (`https://discord.invalid/...`), so the vault code path is tested without
+  the VM holding real tokens or posting to the real Discord.
+- **Tailscale auth keys are passed at run time, not stored.** They expire after
+  90 days at most, so one saved in the vault would be dead when a card actually
+  fails. `-e tailscale_authkey=...` on the rebuild run instead.
+- **The board domain reuses job-agent's script.** `jobs.gen-kuro.com` (tailnet-only
+  HTTPS via Caddy, Let's Encrypt DNS challenge through Cloudflare) is set up by
+  job-agent's `deploy/setup-domain.sh`. The role writes its Cloudflare token
+  from the vault and runs it only if the certificate or Caddy config is missing,
+  so normal runs never touch DNS or request a new certificate. (The old roadmap
+  said Tailscale Serve; the board had since moved to its own domain.)
+
+**Result (2026-11-12):** the vault was checked against the live Pi first by
+comparing SHA-256 hashes of each value, so nothing was displayed. Then:
+
+- A blank VM was set up in one run (~86s, 0 failures), and its second run reported `changed=0`.
+- A dry run on the real Pi 500 showed the env file, keys and domain setup all
+  unchanged.
+- The **first real apply was `changed=0`**. The env file rendered from the vault
+  is byte-for-byte the hand-made one, so the vault provably holds what the Pi runs on.
+- `https://jobs.gen-kuro.com` kept answering throughout.
+
+Known dry-run noise: under `--check`, downloading Tailscale's signing key always
+shows "changed" (Ansible can't compare without downloading), and so does pip on
+a fresh OS. Real runs report `changed=0`.
+
 ## Roadmap
 
 - [x] **Phase 1:** scaffold, inventory, `base` + `jobagent` roles, VM test loop
 - [x] Dry run, then a real apply, against the Pi 500 over Tailscale (2026-11-10)
-- [ ] **Phase 2:** secrets in **ansible-vault** (deploy key + env file), plus
-      Tailscale itself (install, auth key, and Serve for the board page)
+- [x] **Phase 2:** secrets in **ansible-vault** (env file, deploy key, Google key,
+      Cloudflare token), a `tailscale` role (install + join with a one-time key),
+      and the board's domain via job-agent's `setup-domain.sh` (2026-11-12)
 - [ ] **Phase 3:** Minecraft role (Temurin 8, `minecraft` user, `radlite.service`,
       playit) plus world backups
 - [ ] **Phase 4:** Pi 400 Docker stack (start services by name, never a bare
-      `docker compose up -d`)
+      `docker compose up -d`). Note: the `base` role has never run on the Pi 400;
+      a dry run shows it would add vim + unattended-upgrades. Decide whether
+      automatic upgrades belong on the Docker host first.
 - [ ] **Phase 5:** real-hardware test: boot the Pi 500 from a spare SD card or USB
       stick and rebuild it

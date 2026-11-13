@@ -1,0 +1,28 @@
+---
+jobagent_repo: git@github-jobagent:genkuroo/job-agent.git
+jobagent_version: main
+
+# The board at https://jobs.gen-kuro.com (tailnet-only, via job-agent's setup-domain.sh)
+jobagent_domain: jobs.gen-kuro.com
+
+# Secrets: the names live here in plain text so they're easy to find; the
+# values live in vault.yml (encrypted) and contact.yml (encrypted + gitignored).
+# Every vault value starts with `vault_`, so you can always tell where it came from.
+jobagent_secrets:
+  CLAUDE_CODE_OAUTH_TOKEN: "{{ vault_jobagent_env_claude_code_oauth_token }}"
+  GOOGLE_SHEET_ID: "{{ vault_jobagent_env_google_sheet_id }}"
+  DISCORD_WEBHOOK_SRE: "{{ vault_jobagent_env_discord_webhook_sre }}"
+  DISCORD_WEBHOOK_IT: "{{ vault_jobagent_env_discord_webhook_it }}"
+  DISCORD_WEBHOOK_STATUS: "{{ vault_jobagent_env_discord_webhook_status }}"
+  HEALTHCHECK_URL_WATCHLIST: "{{ vault_jobagent_env_healthcheck_url_watchlist }}"
+  HEALTHCHECK_URL_SCOUT: "{{ vault_jobagent_env_healthcheck_url_scout }}"
+  JOBAGENT_BOARD_URL: "{{ vault_jobagent_env_jobagent_board_url }}"
+  CONTACT_NAME: "{{ vault_jobagent_env_contact_name }}"
+  CONTACT_LOCATION: "{{ vault_jobagent_env_contact_location }}"
+  CONTACT_PHONE: "{{ vault_jobagent_env_contact_phone }}"
+  CONTACT_EMAIL: "{{ vault_jobagent_env_contact_email }}"
+  CONTACT_LINKEDIN: "{{ vault_jobagent_env_contact_linkedin }}"
+  CONTACT_GITHUB: "{{ vault_jobagent_env_contact_github }}"
+jobagent_deploy_key_content: "{{ vault_jobagent_deploy_key }}"
+jobagent_google_sa_content: "{{ vault_jobagent_google_sa }}"
+jobagent_cloudflare_token: "{{ vault_jobagent_cloudflare_token }}"

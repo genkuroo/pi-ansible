@@ -13,6 +13,10 @@ See README.md for layout, usage and the roadmap.
   sleeper bot and post to a real Discord. Target services by name.
 - Every role must be idempotent: the second run on the VM must be `changed=0`.
 - `ansible-lint` must pass (production profile).
-- No secrets in the repo until they're in ansible-vault (Phase 2).
+- Secrets live only in `inventory/host_vars/<host>/vault.yml` (ansible-vault).
+  Any task touching one needs `no_log: true` and `diff: false`. Never print a
+  vault value, even while debugging: compare hashes instead.
+- `contact.yml` (phone/email) stays gitignored even though it's encrypted.
+- The test VM only ever gets fake secrets (`inventory/test.yml`), never the vault.
 - job-agent's unit files stay in the job-agent repo; the role copies them from
   the checkout. Don't duplicate them here.
