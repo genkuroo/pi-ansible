@@ -7,8 +7,9 @@ See README.md for layout, usage and the roadmap.
 ## Rules
 - **Test on the Lima VM first** (`-i inventory/test.yml`), then `--check --diff`
   against a real Pi, and only then apply for real. The Pis run live services.
-- **Never wipe the Pi 500's SD card** to test: the Minecraft worlds have no
-  backups. Real-hardware tests use a spare card or USB stick.
+- **Before wiping the Pi 500's SD card** for a rebuild test, copy
+  `~/.local/share/jobagent` off it (job-agent's database and letters). Minecraft
+  was removed 2026-11-13 (worlds archived on the Mac), so that's the only data.
 - **Pi 400:** never run a bare `docker compose up -d`; it would start the
   sleeper bot and post to a real Discord. Target services by name.
 - Every role must be idempotent: the second run on the VM must be `changed=0`.

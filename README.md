@@ -4,7 +4,7 @@ Ansible playbooks that rebuild my Raspberry Pis from a freshly flashed SD card
 with one command, instead of setting them up by hand over SSH.
 
 - **Pi 500** (`pi500`, over Tailscale): job-agent, my self-hosted job-search agent
-  (private repo; systemd user timers), and a modded Minecraft server
+  (private repo; systemd user timers) and its job board at jobs.gen-kuro.com
 - **Pi 400** (`homelab`): the Docker Compose stack behind gen-kuro.com
 
 ## Why
@@ -68,8 +68,10 @@ ansible-playbook playbooks/site.yml                 # apply
    the deploy key, env file and Google key from the vault, starts the timers,
    and re-creates the board's DNS record, certificate and Caddy setup.
 
-Ansible restores **configuration**, not **data**. Databases, letters and
-Minecraft worlds need backups of their own.
+Ansible restores **configuration**, not **data**. job-agent's database and
+letters (`~/.local/share/jobagent`, ~34 MB) need a backup of their own. Losing
+them isn't fatal: what I've applied to lives in the Google Sheet, and the
+lists rebuild on the next run.
 
 ## Testing on a throwaway VM
 
@@ -190,11 +192,15 @@ a fresh OS. Real runs report `changed=0`.
 - [x] **Phase 2:** secrets in **ansible-vault** (env file, deploy key, Google key,
       Cloudflare token), a `tailscale` role (install + join with a one-time key),
       and the board's domain via job-agent's `setup-domain.sh` (2026-11-12)
-- [ ] **Phase 3:** Minecraft role (Temurin 8, `minecraft` user, `radlite.service`,
-      playit) plus world backups
+- [x] ~~**Phase 3:** Minecraft role plus world backups~~. Dropped 2026-11-13: I
+      retired the Minecraft server instead. The worlds were archived to my Mac
+      first, then the server, Java 8, the playit.gg tunnel and their service
+      users were removed from the Pi 500 by hand. There was nothing for a
+      playbook to do: a fresh card never installs Minecraft in the first place.
 - [ ] **Phase 4:** Pi 400 Docker stack (start services by name, never a bare
       `docker compose up -d`). Note: the `base` role has never run on the Pi 400;
       a dry run shows it would add vim + unattended-upgrades. Decide whether
       automatic upgrades belong on the Docker host first.
-- [ ] **Phase 5:** real-hardware test: boot the Pi 500 from a spare SD card or USB
-      stick and rebuild it
+- [ ] **Phase 5:** real-hardware test: rebuild the Pi 500 from a freshly flashed
+      card or USB stick. With Minecraft gone, nothing on it is irreplaceable, so
+      its own card is an option too (back up `~/.local/share/jobagent` first).
