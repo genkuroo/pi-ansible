@@ -1,0 +1,29 @@
+---
+# Pi 400 (homelab): the Docker Compose stack behind gen-kuro.com.
+#
+# Secrets: the names live here in plain text so they're easy to find; the
+# values live in vault.yml (ansible-vault). Every value is stored raw, exactly
+# as written in /opt/homelab/.env (so FFTA_AUTH_HASH keeps its doubled $$ for
+# Compose). DND_SECRET_KEY is stable state: changing it logs out every player.
+homelab_env:
+  DOMAIN: "{{ vault_homelab_env_domain }}"
+  TZ: "{{ vault_homelab_env_tz }}"
+  ANTHROPIC_API_KEY: "{{ vault_homelab_env_anthropic_api_key }}"
+  CLOUDFLARE_TUNNEL_TOKEN: "{{ vault_homelab_env_cloudflare_tunnel_token }}"
+  DND_SECRET_KEY: "{{ vault_homelab_env_dnd_secret_key }}"
+  DND_STAGING_SECRET_KEY: "{{ vault_homelab_env_dnd_staging_secret_key }}"
+  DISCORD_TOKEN: "{{ vault_homelab_env_discord_token }}"
+  DISCORD_GUILD_ID: "{{ vault_homelab_env_discord_guild_id }}"
+  DISCORD_CHANNEL_ID: "{{ vault_homelab_env_discord_channel_id }}"
+  SLEEPER_LEAGUE_ID: "{{ vault_homelab_env_sleeper_league_id }}"
+  SLEEPER_POLL_SECONDS: "{{ vault_homelab_env_sleeper_poll_seconds }}"
+  SLEEPER_ALERT_FAILED_WAIVERS: "{{ vault_homelab_env_sleeper_alert_failed_waivers }}"
+  FFTA_LEAGUES: "{{ vault_homelab_env_ffta_leagues }}"
+  R2_ACCOUNT_ID: "{{ vault_homelab_env_r2_account_id }}"
+  R2_ACCESS_KEY_ID: "{{ vault_homelab_env_r2_access_key_id }}"
+  R2_SECRET_ACCESS_KEY: "{{ vault_homelab_env_r2_secret_access_key }}"
+  R2_BUCKET: "{{ vault_homelab_env_r2_bucket }}"
+  R2_PREFIX: "{{ vault_homelab_env_r2_prefix }}"
+  FFTA_AUTH_USER: "{{ vault_homelab_env_ffta_auth_user }}"
+  FFTA_AUTH_HASH: "{{ vault_homelab_env_ffta_auth_hash }}"
+  DISCORD_ALERT_WEBHOOK: "{{ vault_homelab_env_discord_alert_webhook }}"

@@ -64,7 +64,15 @@ The original checklist, for reference:
    on 2026-09-02).
 5. Note in homelab-pi's vault note + the workspace `CLAUDE.md` row.
 
-### Step 2: the Pi 400's secrets into the vault
+### Step 2: the Pi 400's secrets into the vault (DONE 2026-11-17)
+
+**Done:** all 21 `.env` values (raw, exactly as written) are in
+`inventory/host_vars/homelab/vault.yml`, piped straight from the Pi, never
+displayed. `host_vars/homelab/main.yml` maps them as `homelab_env.<NAME>`.
+Verified two ways by SHA-256: the vault matches the Pi, and so do the values
+*as Ansible resolves them* (the `$$` hash survives templating).
+
+The original notes, for reference:
 
 - `.env` on the Pi has 21 keys (16 filled). Import them into
   `inventory/host_vars/homelab/vault.yml` **through a pipe, never printed**
