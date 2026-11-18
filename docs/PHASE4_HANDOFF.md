@@ -32,7 +32,7 @@ Then:
 
 ## The plan and where it stands
 
-### Step 1: D&D off-site backup (in progress)
+### Step 1: D&D off-site backup (DONE 2026-11-17)
 
 Branch `dnd-offsite-backup` in **homelab-pi** (commit `8818e9a`, pushed, not
 merged, not deployed):
@@ -44,7 +44,13 @@ merged, not deployed):
   both databases (`registry.db`, `campaigns/campaign.db`) pass
   `PRAGMA integrity_check`. Temp files removed.
 
-Remaining:
+**Done:** merged to `main` (`8818e9a`) and deployed to the Pi. The nightly run
+on 2026-11-17 used the new code, and R2 holds 17 D&D snapshots under `dnd/`.
+Restore drill passed 2026-11-17: the newest R2 copy was byte-identical to the
+local one (same SHA-256), both databases passed `PRAGMA integrity_check`, and
+table/row counts matched the live app exactly.
+
+The original checklist, for reference:
 1. Merge the branch to `main` and push.
 2. On the Pi: `cd /opt/homelab && git pull`. The two unit files only changed
    their `Description=`, so copy them over and reload:
