@@ -48,10 +48,27 @@
 - name: Join the tailnet with the one-time auth key
   ansible.builtin.command: >-
     tailscale up --authkey={{ tailscale_authkey }} --hostname={{ tailscale_hostname }}
+    --accept-dns={{ tailscale_accept_dns | lower }}
   become: true
   no_log: true   # the command line holds the key
   changed_when: true
   when: not tailscale_joined and tailscale_authkey | length > 0
+
+- name: Read the current Tailscale settings
+  ansible.builtin.command: tailscale debug prefs
+  register: tailscale_prefs
+  changed_when: false
+  check_mode: false
+  become: true
+  when: tailscale_joined
+
+- name: Enforce the DNS setting (accept-dns={{ tailscale_accept_dns | lower }})
+  ansible.builtin.command: tailscale set --accept-dns={{ tailscale_accept_dns | lower }}
+  become: true
+  changed_when: true
+  when:
+    - tailscale_joined
+    - (tailscale_prefs.stdout | from_json).CorpDNS != tailscale_accept_dns
 
 - name: Say why this machine wasn't joined
   ansible.builtin.debug:

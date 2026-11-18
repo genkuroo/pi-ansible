@@ -1,0 +1,76 @@
+---
+# The Docker Compose stack behind gen-kuro.com (Ansible version of homelab-pi's
+# scripts/bootstrap.sh). The compose file, scripts and systemd units stay in
+# the homelab-pi repo; this role puts them in place and starts things.
+
+homelab_user: "{{ ansible_facts['user_id'] }}"
+homelab_dir: /opt/homelab
+
+# Compose builds each app from ../<app>, so every repo sits next to /opt/homelab.
+# Cloned on a fresh machine only: an existing checkout is never updated here,
+# because new code without a rebuild would leave the disk out of step with the
+# running containers. Deploys go through the deploy scripts / git pull + build.
+homelab_repos:
+  - { name: homelab-pi, dest: /opt/homelab }
+  - { name: stock-tracker, dest: /opt/stock-tracker }
+  - { name: fitness-dashboard, dest: /opt/fitness-dashboard }
+  - { name: dnd-campaign-tracker, dest: /opt/dnd-campaign-tracker }
+  - { name: sleeper-discord-bot, dest: /opt/sleeper-discord-bot }
+  - { name: ff-trade-analyzer, dest: /opt/ff-trade-analyzer }
+homelab_repo_base: https://github.com/genkuroo
+
+# Started by name, never a bare `docker compose up -d` (house rule: a service
+# added to the compose file must be switched on deliberately).
+homelab_services:
+  - caddy
+  - cloudflared
+  - stock-demo
+  - fitness-demo
+  - dnd
+  - dnd-staging
+  - stock
+  - fitness
+  - ffta
+  - sleeper-bot
+
+# Private dashboards on the tailnet (real data; bound to 127.0.0.1 in compose).
+homelab_serve:
+  - { https_port: 443, local_port: 5001 }    # stock
+  - { https_port: 8443, local_port: 5002 }   # fitness
+  - { https_port: 8444, local_port: 5003 }   # fantasy analyzer
+
+# Public halves of the GitHub Actions deploy keys, each locked to one script.
+homelab_deploy_keys: []
+
+# Docker's apt repo
+homelab_docker_arch: "{{ 'arm64' if ansible_facts['architecture'] == 'aarch64' else 'amd64' }}"
+homelab_docker_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+
+# Secrets: set per host from the vault (see inventory/host_vars/homelab/main.yml)
+homelab_env_names:
+  - DOMAIN
+  - TZ
+  - ANTHROPIC_API_KEY
+  - CLOUDFLARE_TUNNEL_TOKEN
+  - DND_SECRET_KEY
+  - DND_STAGING_SECRET_KEY
+  - DISCORD_TOKEN
+  - DISCORD_GUILD_ID
+  - DISCORD_CHANNEL_ID
+  - SLEEPER_LEAGUE_ID
+  - SLEEPER_POLL_SECONDS
+  - SLEEPER_ALERT_FAILED_WAIVERS
+  - FFTA_LEAGUES
+  - R2_ACCOUNT_ID
+  - R2_ACCESS_KEY_ID
+  - R2_SECRET_ACCESS_KEY
+  - R2_BUCKET
+  - R2_PREFIX
+  - FFTA_AUTH_USER
+  - FFTA_AUTH_HASH
+  - DISCORD_ALERT_WEBHOOK

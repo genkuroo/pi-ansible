@@ -1,0 +1,197 @@
+---
+# Ansible version of homelab-pi's scripts/bootstrap.sh: a blank Pi to the full
+# gen-kuro.com stack. Timezone comes from the base role, Tailscale itself from
+# the tailscale role.
+
+# Same idea as the jobagent role: stop before touching anything if the vault
+# didn't load, instead of writing a half-empty .env.
+- name: Check every .env value this role needs is set
+  ansible.builtin.assert:
+    that:
+      - homelab_env is defined
+      - homelab_env_names | difference(homelab_env.keys()) | length == 0
+    fail_msg: >-
+      Missing homelab secrets. They come from inventory/host_vars/<host>/vault.yml
+      (ansible-vault); check it exists and the vault password is at
+      ~/.config/pi-ansible/vault-pass.
+    quiet: true
+
+# --- Docker (from Docker's own apt repo, like get.docker.com sets it up) -------
+- name: Add Docker's package signing key
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/debian/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+  become: true
+
+- name: Add Docker's apt repo
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/docker.list
+    mode: "0644"
+    content: >
+      deb [arch={{ homelab_docker_arch }} signed-by=/etc/apt/keyrings/docker.asc]
+      https://download.docker.com/linux/debian {{ ansible_facts['distribution_release'] }} stable
+  become: true
+  register: homelab_docker_repo
+
+- name: Install Docker
+  ansible.builtin.apt:
+    name: "{{ homelab_docker_packages }}"
+    state: present
+    update_cache: "{{ homelab_docker_repo is changed }}"
+  become: true
+
+- name: Let this user run docker without sudo
+  ansible.builtin.user:
+    name: "{{ homelab_user }}"
+    groups: docker
+    append: true
+  become: true
+  register: homelab_docker_group
+
+# A new group only applies to new logins. Without this, every docker command
+# below would fail with "permission denied" on a fresh machine.
+- name: Log in again so the docker group takes effect
+  ansible.builtin.meta: reset_connection
+
+# --- The repos -------------------------------------------------------------------
+- name: Create the repo folders (/opt is root's; the repos are this user's)
+  ansible.builtin.file:
+    path: "{{ item.dest }}"
+    state: directory
+    owner: "{{ homelab_user }}"
+    group: "{{ homelab_user }}"
+    mode: "0755"
+  loop: "{{ homelab_repos }}"
+  loop_control:
+    label: "{{ item.dest }}"
+  become: true
+
+# update: false = clone if missing, otherwise leave the checkout alone. Shipping
+# new code is the deploy scripts' job (they pull AND rebuild).
+- name: Clone the repos (fresh machine only)
+  ansible.builtin.git:
+    repo: "{{ homelab_repo_base }}/{{ item.name }}.git"
+    dest: "{{ item.dest }}"
+    version: main
+    update: false
+  loop: "{{ homelab_repos }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+# --- Docker settings ------------------------------------------------------------
+# Pinned DNS for containers: the fix for the 2026-09-10 and 2026-10-20 outages
+# (see homelab-pi's docs). Docker only reads this at startup, hence the handler.
+- name: Install Docker's daemon.json from the repo (pinned DNS)
+  ansible.builtin.copy:
+    src: "{{ homelab_dir }}/docker/daemon.json"
+    dest: /etc/docker/daemon.json
+    remote_src: true
+    mode: "0644"
+  become: true
+  notify: Restart Docker
+
+# --- Config + secrets ------------------------------------------------------------
+- name: Write the .env (values from the vault)
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ homelab_dir }}/.env"
+    mode: "0600"
+  no_log: true
+  diff: false   # --diff would print old and new secrets side by side
+
+# Bind-mounted into sleeper-bot as a FILE. If it's missing when the container is
+# created, Docker makes a directory there and /health breaks silently.
+# force: false creates it once and never resets the report.
+- name: Create the health-check report file before any container exists
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ homelab_dir }}/.healthcheck-report.json"
+    force: false
+    mode: "0664"
+
+# --- systemd timers (unit files stay in the homelab-pi repo) -----------------------
+- name: Find the unit files in the repo
+  ansible.builtin.find:
+    paths: "{{ homelab_dir }}/systemd"
+    patterns: ["*.service", "*.timer"]
+  register: homelab_units
+
+- name: Install the unit files
+  ansible.builtin.copy:
+    src: "{{ item.path }}"
+    dest: /etc/systemd/system/
+    remote_src: true
+    mode: "0644"
+  loop: "{{ homelab_units.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  become: true
+  notify: Reload systemd
+
+- name: Apply Docker and unit changes before starting anything
+  ansible.builtin.meta: flush_handlers
+
+# --- The stack ----------------------------------------------------------------------
+# Builds any image that doesn't exist yet, then starts each service by name.
+# On a running stack with nothing changed, Compose reports every container as
+# "Running" and touches nothing, so this only counts as a change if it did work.
+- name: Start the stack, service by service
+  ansible.builtin.command:
+    cmd: docker compose up -d {{ homelab_services | join(' ') }}
+    chdir: "{{ homelab_dir }}"
+  register: homelab_up
+  changed_when: homelab_up.stderr is search('Creat|Recreat|Start|Built|Pull')
+
+# The timers run `docker compose exec` against running services, so they go on
+# after the stack is up.
+- name: Enable and start the timers
+  ansible.builtin.systemd_service:
+    name: "{{ item.path | basename }}"
+    enabled: true
+    state: started
+  loop: "{{ homelab_units.files | selectattr('path', 'search', '\\.timer$') | list }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  become: true
+
+# --- Private dashboards on the tailnet -------------------------------------------------
+- name: Read the current Tailscale Serve setup
+  ansible.builtin.command: tailscale serve status --json
+  register: homelab_serve_status
+  changed_when: false
+  failed_when: false
+  check_mode: false
+  become: true
+
+# Serve config is keyed "<host>:<port>" with a proxy target per path. Add any
+# dashboard that isn't already pointing at the right local port.
+- name: Put the private dashboards on the tailnet (HTTPS, tailnet only)
+  ansible.builtin.command: >-
+    tailscale serve --bg --https {{ item.https_port }} http://127.0.0.1:{{ item.local_port }}
+  loop: "{{ homelab_serve }}"
+  loop_control:
+    label: ":{{ item.https_port }} -> 127.0.0.1:{{ item.local_port }}"
+  become: true
+  changed_when: true
+  when:
+    - tailscale_joined | default(false)
+    - >-
+      ((homelab_serve_status.stdout | default('{}', true) | from_json).Web | default({}))
+      | dict2items
+      | selectattr('key', 'search', ':' ~ item.https_port ~ '$')
+      | map(attribute='value.Handlers') | map('dict2items') | flatten
+      | selectattr('value.Proxy', 'defined')
+      | selectattr('value.Proxy', 'equalto', 'http://127.0.0.1:' ~ item.local_port)
+      | list | length == 0
+
+# --- CI/CD deploy keys ----------------------------------------------------------------------
+- name: Allow the GitHub Actions deploy keys (each locked to one deploy script)
+  ansible.builtin.lineinfile:
+    path: "{{ ansible_facts['user_dir'] }}/.ssh/authorized_keys"
+    line: "{{ item }}"
+    create: true
+    mode: "0600"
+  loop: "{{ homelab_deploy_keys }}"
+  loop_control:
+    label: "{{ item.split()[-1] }}"

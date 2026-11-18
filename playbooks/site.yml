@@ -13,3 +13,8 @@
   hosts: jobagent
   roles:
     - jobagent
+
+- name: The gen-kuro.com stack (Pi 400)
+  hosts: docker_stack
+  roles:
+    - homelab

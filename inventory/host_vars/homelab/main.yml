@@ -5,6 +5,10 @@
 # values live in vault.yml (ansible-vault). Every value is stored raw, exactly
 # as written in /opt/homelab/.env (so FFTA_AUTH_HASH keeps its doubled $$ for
 # Compose). DND_SECRET_KEY is stable state: changing it logs out every player.
+# Keep Tailscale's DNS off here: the fix for the 2026-09-10 and 2026-10-20
+# outages (Tailscale and NetworkManager fighting over /etc/resolv.conf).
+tailscale_accept_dns: false
+
 homelab_env:
   DOMAIN: "{{ vault_homelab_env_domain }}"
   TZ: "{{ vault_homelab_env_tz }}"
@@ -27,3 +31,15 @@ homelab_env:
   FFTA_AUTH_USER: "{{ vault_homelab_env_ffta_auth_user }}"
   FFTA_AUTH_HASH: "{{ vault_homelab_env_ffta_auth_hash }}"
   DISCORD_ALERT_WEBHOOK: "{{ vault_homelab_env_discord_alert_webhook }}"
+
+# Public halves of the GitHub Actions deploy keys (not secret). Each is locked
+# to one script by command=, with no shell, no PTY and no forwarding.
+homelab_deploy_keys:
+  - >-
+    command="/opt/homelab/scripts/deploy-staging.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAcLHUKtV9mEZRtEI4KFo8D6zn2HmSr/L9XDgadxgMOe
+    github-actions-deploy-staging
+  - >-
+    command="/opt/homelab/scripts/deploy-prod.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty
+    ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINVLfKZYDEbxrSGsR6Z8sF/5xzLVoSmQ/kqOm+lvEJLh
+    github-actions-deploy-prod

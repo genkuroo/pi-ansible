@@ -3,6 +3,11 @@
 tailscale_codename: "{{ ansible_facts['distribution_release'] }}"
 tailscale_hostname: "{{ inventory_hostname }}"
 
+# Use the tailnet's DNS (MagicDNS) on this machine? The Pi 400 sets this false:
+# with it on, Tailscale and NetworkManager fight over /etc/resolv.conf, which
+# caused two outages (homelab-pi docs/incidents). Enforced on every run.
+tailscale_accept_dns: true
+
 # One-time auth key, only needed to join a fresh card to the tailnet. Pass it at
 # run time instead of storing it: keys expire (90 days max), so a stored one
 # would be dead by the time a card actually fails.

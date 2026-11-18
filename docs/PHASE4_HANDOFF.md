@@ -85,6 +85,20 @@ The original notes, for reference:
 
 ### Step 3: a `homelab` role (replaces homelab-pi's `scripts/bootstrap.sh`)
 
+**Built 2026-11-17, tested, not yet applied to the real Pi.** `roles/homelab`
+plus the step 4 Tailscale fix. Blank Lima VM (`testhomelab`, 4 CPU / 4 GB):
+one run, 0 failures, the full stack up. Public sites answer through Caddy
+(launcher/demos 200, dnd 302 to login, fantasy 401 = the `$$` hash works).
+cloudflared and sleeper-bot crash-loop on their fake tokens, as intended.
+Second run: only "changed" was Compose restarting those two. Real Pi dry run:
+.env, units, repos, daemon.json, DNS setting, deploy keys and all three Serve
+mappings unchanged; only base packages (approved) and the signing-key
+download (dry-run noise).
+
+**Finding:** the real stock app needs `/data/tickers.json` in its volume (68 B,
+the tracked tickers). `backup.sh` backs up `stocks.db` only, so after a card
+failure the dashboard would crash until it's recreated by hand. Decision pending.
+
 Mirror what `bootstrap.sh` does, as Ansible:
 - Docker from Docker's apt repo, matching the Pi exactly:
   `deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian trixie stable`;
@@ -108,7 +122,7 @@ Mirror what `bootstrap.sh` does, as Ansible:
   not secret.
 - `noatime` is already set in `/etc/fstab`; at most, assert it.
 
-### Step 4: fix the tailscale role for the Pi 400
+### Step 4: fix the tailscale role for the Pi 400 (DONE 2026-11-17, with step 3)
 
 The Pi 400 must keep `--accept-dns=false` (the fix for the 2026-09-10 and
 2026-10-20 DNS outages). The role's `tailscale up` doesn't pass it, so add a

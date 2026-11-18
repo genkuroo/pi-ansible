@@ -6,6 +6,41 @@ all:
   children:
     pis:
       hosts:
+        testhomelab:
+          # Stands in for a fresh Pi 400. FAKE secrets only: the tunnel token
+          # and bot token are junk, so cloudflared and the bot fail harmlessly
+          # and nothing reaches Cloudflare, Discord, Anthropic or R2.
+          ansible_host: lima-testhomelab
+          ansible_ssh_common_args: "-F {{ lookup('env', 'HOME') }}/.lima/testhomelab/ssh.config"
+          tailscale_accept_dns: false
+          homelab_deploy_keys:
+            - >-
+              command="/opt/homelab/scripts/deploy-staging.sh",no-port-forwarding,no-X11-forwarding,no-agent-forwarding,no-pty
+              ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMcFquFZ1h6512zoC20lZnKnGdvDlD29FmS9uzS85PRn
+              test-deploy-key
+          homelab_env:
+            DOMAIN: example.invalid
+            TZ: America/Los_Angeles
+            ANTHROPIC_API_KEY: fake-anthropic-key
+            CLOUDFLARE_TUNNEL_TOKEN: fake-tunnel-token
+            DND_SECRET_KEY: fake-dnd-secret
+            DND_STAGING_SECRET_KEY: fake-dnd-staging-secret
+            DISCORD_TOKEN: fake-discord-token
+            DISCORD_GUILD_ID: "0"
+            DISCORD_CHANNEL_ID: "0"
+            SLEEPER_LEAGUE_ID: "0"
+            SLEEPER_POLL_SECONDS: "300"
+            SLEEPER_ALERT_FAILED_WAIVERS: "0"
+            FFTA_LEAGUES: "0:test"
+            R2_ACCOUNT_ID: ""
+            R2_ACCESS_KEY_ID: ""
+            R2_SECRET_ACCESS_KEY: ""
+            R2_BUCKET: ""
+            R2_PREFIX: ffta
+            FFTA_AUTH_USER: test
+            # bcrypt of the throwaway password "test", every $ doubled like the real one
+            FFTA_AUTH_HASH: '$$2a$$10$$6eE82RH0IizPSsVZFbtu7eCy4fmbu2bOrrpDITxghGpZlUHfCmXVi'
+            DISCORD_ALERT_WEBHOOK: https://discord.invalid/alerts
         testpi:
           # Lima writes an SSH config for each VM; reuse it so the port and key
           # stay right after every restart.
@@ -34,3 +69,6 @@ all:
     jobagent:
       hosts:
         testpi:
+    docker_stack:
+      hosts:
+        testhomelab:
