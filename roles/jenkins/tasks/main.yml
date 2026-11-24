@@ -1,0 +1,64 @@
+---
+# Install Jenkins LTS from the Jenkins project's apt repo, listening on
+# localhost only. Mirrors the hand install on the scratch VM, step for step.
+
+- name: Install Java (Jenkins runs on it) and fontconfig (for its charts)
+  ansible.builtin.apt:
+    name:
+      - fontconfig
+      - openjdk-21-jre-headless
+    state: present
+    update_cache: true
+    cache_valid_time: 3600   # skip `apt update` if it ran in the last hour
+  become: true
+
+- name: Add Jenkins's package signing key
+  ansible.builtin.get_url:
+    url: "{{ jenkins_repo_key_url }}"
+    dest: "{{ jenkins_repo_keyring }}"
+    mode: "0644"
+  become: true
+
+- name: Add Jenkins's apt repo (LTS)
+  ansible.builtin.copy:
+    dest: /etc/apt/sources.list.d/jenkins.list
+    mode: "0644"
+    content: |
+      deb [signed-by={{ jenkins_repo_keyring }}] https://pkg.jenkins.io/debian-stable binary/
+  become: true
+  register: jenkins_repo
+
+# Put the localhost-only setting in place BEFORE installing, so the very
+# first start already uses it and Jenkins never listens on the LAN, even
+# for a moment.
+- name: Make the folder for Jenkins's systemd override
+  ansible.builtin.file:
+    path: /etc/systemd/system/jenkins.service.d
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Listen on localhost only
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/jenkins.service.d/override.conf
+    mode: "0644"
+    content: |
+      [Service]
+      Environment="JENKINS_LISTEN_ADDRESS={{ jenkins_listen_address }}"
+      Environment="JENKINS_PORT={{ jenkins_port }}"
+  become: true
+  notify: Restart Jenkins
+
+- name: Install Jenkins (pinned version)
+  ansible.builtin.apt:
+    name: "jenkins={{ jenkins_version }}"
+    state: present
+    update_cache: "{{ jenkins_repo is changed }}"   # new repo: refresh the list first
+  become: true
+
+- name: Run Jenkins at boot
+  ansible.builtin.systemd_service:
+    name: jenkins
+    enabled: true
+    state: started
+  become: true

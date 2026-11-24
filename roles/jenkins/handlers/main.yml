@@ -1,0 +1,9 @@
+---
+# Runs only when a task that notifies it actually changed something,
+# and only once, at the end of the play, however many tasks notified it.
+- name: Restart Jenkins
+  ansible.builtin.systemd_service:
+    name: jenkins
+    state: restarted
+    daemon_reload: true
+  become: true

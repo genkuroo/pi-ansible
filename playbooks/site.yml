@@ -13,3 +13,8 @@
   hosts: jobagent
   roles:
     - jobagent
+
+- name: Jenkins CI server
+  hosts: jenkins
+  roles:
+    - jenkins

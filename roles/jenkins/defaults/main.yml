@@ -1,0 +1,14 @@
+---
+# Jenkins LTS, pinned so a rebuild months from now is exact version
+jenkins_version: "2.580.2"
+
+# Jenkins rotates its repo signing key every few years
+jenkins_repo_key_url: https://pkg.jenkins.io/debian-stable/jenkins.io-2026.key
+
+# Localhost only, tailscale serves to expose it on tailnet; nothing on LAN
+jenkins_listen_address: "127.0.0.1"
+jenkins_port: 8080
+
+# Where the key is saved, year is part of the name so when the URL changes to new
+# key, it's a new file and Ansible downloads it
+jenkins_repo_keyring: "/etc/apt/keyrings/{{ jenkins_repo_key_url | basename | splitext | first }}.asc"
