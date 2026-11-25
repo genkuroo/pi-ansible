@@ -31,6 +31,13 @@ all:
             CONTACT_LINKEDIN: linkedin.invalid/test
             CONTACT_GITHUB: github.invalid/test
           jobagent_google_sa_content: '{"type": "service_account", "note": "fake, test VM only"}'
+        # Fresh VM for testing the jenkins role (no job-agent on it).
+        testjenkins:
+          ansible_host: lima-testjenkins
+          ansible_ssh_common_args: "-F {{ lookup('env', 'HOME') }}/.lima/testjenkins/ssh.config"
     jobagent:
       hosts:
         testpi:
+    jenkins:
+      hosts:
+        testjenkins:
